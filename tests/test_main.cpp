@@ -21,6 +21,21 @@ static Eigen::Matrix<double, Size_, Size_> exp(const Eigen::Matrix<double, Size_
     return res;
 }
 
+static Eigen::Matrix<double,6,6> standardJacobian(Eigen::Vector<double,6> state) {
+    double phi, theta, psi;
+    phi = state(3);
+    theta = state(4);
+    psi = state(5);
+    Eigen::Matrix<double,6,6> J;
+    J <<                             cos(psi)*cos(theta),                               sin(psi)*cos(theta),         -sin(theta), 0, 0, 0,
+         -sin(psi)*cos(phi)+cos(psi)*sin(theta)*sin(phi),  cos(psi)*cos(phi) + sin(phi)*sin(theta)*sin(psi), cos(theta)*sin(phi), 0, 0, 0,
+        sin(psi)*sin(phi) + cos(psi)*cos(phi)*sin(theta), -cos(psi)*sin(phi) + sin(theta)*sin(psi)*cos(phi), cos(theta)*cos(phi), 0, 0, 0,
+        0, 0, 0, 1,         0,         -sin(theta),
+        0, 0, 0, 0,  cos(phi), sin(phi)*cos(theta),
+        0, 0, 0, 0, -sin(phi), cos(phi)*cos(theta);
+    return J;
+}
+
 TEST_CASE("Skew operator computation", "[skew]") {
     Eigen::Vector3i v;
     v << 1, 2, 3;
@@ -118,16 +133,15 @@ TEST_CASE("so(3) exp", "[so3Exp]") {
 }
 
 TEST_CASE("se(3) exp","[se3Exp]") {
-    Eigen::Vector<double,6> v;
-    v << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
-    v = 0.5 * v.normalized();
-    Eigen::Matrix<double,4,4> V = wedge(v);
-    //std::cout << "exp(V):\n" << exp(V) << "\n";
-    //std::cout << "se3Exp(v):\n" << se3Exp(v) << "\n";
+    Eigen::Vector<double,6> v, v2;
+    v << 1.0, 2.0, 3.0, 1.1, 2.2, 1.3;
+    v2 << 1.0, 2.0, 3.0, 0.0, 0.0, 0.0;
 
-    REQUIRE( (exp(V) - se3Exp(v)).norm() < 1e-1);
-    // TODO: i am not able to get the error less than 1e-1. Something wrong with
-    // normalizing the v variable?
+    Eigen::Matrix<double,4,4> V = wedge(v);
+    Eigen::Matrix<double,4,4> V2 = wedge(v2);
+
+    REQUIRE( (exp(V) - se3Exp(v)).norm() < 1e-6);
+    REQUIRE( (exp(V2) - se3Exp(v2)).norm() < 1e-6);
 }
 
 
@@ -148,6 +162,15 @@ TEST_CASE("Adjoint operator", "[adjointMatrix]") {
     REQUIRE( (B1 - B2).norm() < 1e-6);
 }
 
+TEST_CASE("Adjoint operator se3", "[adjointMatrix]") {
+    Eigen::Vector<double,6> eta, x;
+    eta << 0.1, 0.2, 0.3, 0.4, 0.5, 0.6;
+    x << 1.2, 0.4, 0.3, 1.5, 0.6, 0.2;
+    // [Ad(exp([eta])) x] = exp([eta]) * [x] (exp([eta]))^{-1}
+    Eigen::Matrix4d A1 = wedge(adjointMatrix(eta) * x);
+    Eigen::Matrix4d A2 = exp(wedge(eta)) * wedge(x) * exp(wedge(-eta));
+}
+
 TEST_CASE("ostream << SE3", "SE3::operator<<") {
     SE3 A = SE3();
     A.addExponential(Eigen::Vector<double,6>::Zero(),6);
@@ -161,6 +184,7 @@ TEST_CASE("ostream << SE3", "SE3::operator<<") {
 TEST_CASE("SE3 evaluation", "SE3::eval()") {
     Eigen::Isometry3d T = Eigen::Isometry3d::Identity();
     T.rotate(Eigen::AngleAxisd(2.3,Eigen::Vector3d::UnitX()));
+    T.translate(Eigen::Vector3d(0.1,0.2,0.3));
     SE3 A = SE3(T);
 
     Eigen::Vector<double,6> twist1, twist2, twist3;
@@ -174,20 +198,84 @@ TEST_CASE("SE3 evaluation", "SE3::eval()") {
     A.addExponential(twist3,2);
 
     Eigen::VectorXd theta(3);
-    theta << 1.0, 2.0, 3.0;
-    std::cout << A.eval(theta) << "\n";
-    std::cout << T.matrix() * se3Exp(theta(0) * twist1) * se3Exp(theta(1) * twist2) * se3Exp(theta(2) * twist3) << "\n";
+    theta << 1.14, 2.15, 3.16;
+    Eigen::Matrix4d v1 = A.eval(theta);
+    Eigen::Matrix4d v2 = T.matrix() * se3Exp(theta(0) * twist1) * se3Exp(theta(1) * twist2) * se3Exp(theta(2) * twist3);
+    REQUIRE( (v1 - v2).norm() < 1e-6);
 }
 
 TEST_CASE("SE3 * SE3", "SE3::operator*") {
-    SE3 A = SE3();
-    A.addExponential(Eigen::Vector<double,6>::Zero(),6);
-    A.addExponential(Eigen::Vector<double,6>::Zero(),2);
+    Eigen::Isometry3d Ta = Eigen::Isometry3d::Identity();
+    Ta.rotate(Eigen::AngleAxisd(1.34,Eigen::Vector3d(0.1,0.2,0.3).normalized()));
+    Ta.translate(Eigen::Vector3d(0.1,0.2,0.3));
+    SE3 A = SE3(Ta);
+    Eigen::Vector<double,6> atwist1;
+    Eigen::Vector<double,6> atwist2;
+    atwist1 << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+    atwist2 << 0.0, 1.0, 0.0, 0.0, 0.0, 0.0;
+    A.addExponential(atwist1,0);
+    A.addExponential(atwist2,1);
 
-    SE3 B = SE3();
-    A.addExponential(Eigen::Vector<double,6>::Zero(),6);
-    A.addExponential(Eigen::Vector<double,6>::Zero(),2);
+    Eigen::Isometry3d Tb = Eigen::Isometry3d::Identity();
+    Tb.rotate(Eigen::AngleAxisd(2.12,Eigen::Vector3d(-1.4,0.3,0.6).normalized()));
+    Tb.translate(Eigen::Vector3d(0.8,-0.2,2.3));
+    SE3 B = SE3(Tb);
+    Eigen::Vector<double,6> btwist1;
+    Eigen::Vector<double,6> btwist2;
+    btwist1 << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+    btwist2 << 0.0, 1.0, 0.0, 0.0, 0.0, 0.0;
+    A.addExponential(btwist1,0);
+    A.addExponential(btwist2,1);
 
-    A * B;
-    // TODO: Continue here
+    Eigen::VectorXd theta(2);
+    theta << 0.1, 0.2;
+    Eigen::Matrix4d v1 = (A * B).eval(theta);
+    Eigen::Matrix4d v2 = A.eval(theta) * B.eval(theta);
+    REQUIRE( (v1-v2).norm() < 1e-6);
+}
+
+TEST_CASE("SE3::evalVec","evalVec") {
+    Eigen::Isometry3d Ta = Eigen::Isometry3d::Identity();
+    Ta.rotate(Eigen::AngleAxisd(1.34,Eigen::Vector3d(0.1,0.2,0.3).normalized()));
+    Ta.translate(Eigen::Vector3d(0.1,0.2,0.3));
+    SE3 A = SE3(Ta);
+    Eigen::Vector<double,6> atwist1;
+    Eigen::Vector<double,6> atwist2;
+    atwist1 << 1.0, 0.0, 0.0, 0.0, 0.0, 0.0;
+    atwist2 << 0.0, 1.0, 0.0, 0.0, 0.0, 0.0;
+    A.addExponential(atwist1,0);
+    A.addExponential(atwist2,1);
+
+    Eigen::Vector4d v;
+    v << 0.1, 0.2, 0.3, 1.0;
+
+    Eigen::VectorXd theta(2);
+    theta << 0.34, 0.89;
+
+    Eigen::Vector3d v1 = (A.eval(theta) * v).block<3,1>(0,0);
+    Eigen::Vector3d v2 = A.evalVec(theta, v.block<3,1>(0,0));
+    REQUIRE( (v1 - v2).norm() < 1e-6);
+}
+
+TEST_CASE("SE3::jacobian","jacobian") {
+    SE3 A = SE3::translateParam(Eigen::Vector3d::UnitX(),0) * 
+            SE3::translateParam(Eigen::Vector3d::UnitY(),1) *
+            SE3::translateParam(Eigen::Vector3d::UnitZ(),2) *
+            SE3::rotateZParam(5) *
+            SE3::rotateYParam(4) *
+            SE3::rotateXParam(3);
+
+    Eigen::VectorXd theta(6);
+
+    theta << 1.0, 2.0, 3.0, 4.0, 5.0, 6.0;
+    Eigen::MatrixXd J1 = A.jacobian(theta);
+    Eigen::MatrixXd J2 = standardJacobian(theta);
+    REQUIRE( (J1 - J2).norm() < 1e-6);
+
+    for (int i = 0; i < 10; i++) {
+        theta = Eigen::VectorXd::Random(6);
+        Eigen::MatrixXd J3 = A.jacobian(theta);
+        Eigen::MatrixXd J4 = standardJacobian(theta);
+        REQUIRE( (J3 - J4).norm() < 1e-6);
+    }
 }
