@@ -48,7 +48,32 @@ Eigen::Vector3d SE3::evalVec(const Eigen::VectorXd& params, const Eigen::Vector3
     return res.block<3,1>(0,0);
 }
 
-Eigen::Vector<double,6> SE3::twistBody(const Eigen::VectorXd& params, const Eigen::VectorXd diffParams) const
+Eigen::Matrix4d SE3::evalDot(const Eigen::VectorXd& params, const Eigen::VectorXd& diffParams) const {
+    Eigen::Matrix4d RES = Eigen::Matrix4d::Zero();
+    std::vector<Eigen::Matrix4d> expEvals;
+    expEvals.reserve(this->exponentials.size());
+    for (const SE3Term& term : this->exponentials) {
+        assert(params.size() > term.paramIndex && "Not enough parameters to evaluate SE(3) object!");
+        expEvals.push_back(se3Exp(params(term.paramIndex)*term.twist));
+    }
+    
+    // TODO: There is probably a much better way of doing this
+
+    for (std::size_t i = 0; i < this->exponentials.size(); i++) {
+        Eigen::Matrix4d temp = Eigen::Matrix4d::Identity();
+        for (std::size_t j = 0; j < this->exponentials.size(); j++) {
+            temp = temp * expEvals[j];
+            if (j == i) {
+                SE3Term term = this->exponentials[j];
+                temp = temp * wedge(diffParams(term.paramIndex)*term.twist);
+            }
+        }
+        RES += temp;
+    }
+    return this->A.matrix() * RES;
+}
+
+Eigen::Vector<double,6> SE3::twistBody(const Eigen::VectorXd& params, const Eigen::VectorXd& diffParams) const
 {
     std::cout << "\x1b[31mWARNING\x1b[0m: SE3::twistBody not verified!\n";
     Eigen::Vector<double,6> twist = Eigen::Vector<double,6>::Zero();

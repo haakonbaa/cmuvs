@@ -1,11 +1,16 @@
 # Enable testing
 enable_testing()
 
-# Ensure Catch2 is available
-set(CATCH2_SOURCE_DIR "${CMAKE_SOURCE_DIR}/external/Catch2")
+include(FetchContent)
 
-# Add Catch2
-add_subdirectory(${CATCH2_SOURCE_DIR} ${CMAKE_BINARY_DIR}/Catch2Build)
+# Fetch Catch2 if not present
+FetchContent_Declare(
+    Catch2
+    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+    GIT_TAG v3.8.0
+)
+
+FetchContent_MakeAvailable(Catch2)
 
 # List of test files
 set(TEST_SOURCES

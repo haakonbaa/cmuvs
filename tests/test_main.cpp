@@ -279,3 +279,17 @@ TEST_CASE("SE3::jacobian","jacobian") {
         REQUIRE( (J3 - J4).norm() < 1e-6);
     }
 }
+
+TEST_CASE("SE3::evalDot","evalDot") {
+    SE3 A = SE3::translateParam(Eigen::Vector3d::UnitX(),0) * 
+            SE3::translateParam(Eigen::Vector3d::UnitY(),1) *
+            SE3::translateParam(Eigen::Vector3d::UnitZ(),2) *
+            SE3::rotateZParam(5) *
+            SE3::rotateYParam(4) *
+            SE3::rotateXParam(3);
+    Eigen::Vector<double,6> eta, eta_dot;
+    eta << Eigen::Vector<double,6>::Random();
+    eta_dot << Eigen::Vector<double,6>::Random();
+    auto Adot = A.evalDot(eta, eta_dot);
+    std::cout << "Adot:\n" << Adot << "\n";
+}

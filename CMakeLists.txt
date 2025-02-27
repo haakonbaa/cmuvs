@@ -28,6 +28,11 @@ else()
     target_compile_options(cmuvs PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
+# Add an option to enable/disable tests (default: OFF)
+option(BUILD_TESTS "Build tests for CMUVs" OFF)
 
+# Conditionally add the test directory
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()
 # Add the test directory
-add_subdirectory(tests)
